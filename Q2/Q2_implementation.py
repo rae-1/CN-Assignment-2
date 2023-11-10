@@ -8,17 +8,14 @@ from time import sleep
 from mininet.link import TCLink
 import argparse
 
-parser = argparse.ArgumentParser(description='Mininet Topology with TCP client-server using iperf')
-parser.add_argument('--config', default='b', help='Configuration (b or c)')
-parser.add_argument('--congestion', default='cubic', help='Congestion control scheme (e.g., cubic, reno)')
-parser.add_argument('--loss', default='0', help='Link loss rate (e.g., 0, 10)')
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', default='b')
+parser.add_argument('--congestion', default='cubic')
+parser.add_argument('--loss', default='0')
 args = parser.parse_args()
 
 
 class NetworkTopo(Topo):
-    "A LinuxRouter connecting three IP subnets"
-    # def __init__(self, loss):
-    #     self.link_loss = loss
 
     def build(self, **_opts):
         s1 = self.addSwitch('s1')
@@ -33,59 +30,76 @@ class NetworkTopo(Topo):
         self.addLink(h2, s1)
         self.addLink(h3, s2)
         self.addLink(h4, s2)
-        self.addLink(s1, s2,cls=TCLink, bw=20, loss=int(args.loss))
+        self.addLink(s1, s2,cls=TCLink, bw=10, loss=int(args.loss))
 
 
 
 def run(config, congestion_control, link_loss):
-
-    "Test Linux Router with iperf TCP client-server"
     topo = NetworkTopo()
     net = Mininet(topo=topo, controller=OVSController, link=TCLink)
-
-    # Configure congestion control and link loss
-    # for switch in net.switches:
-    #     switch.cmd(f'tc qdisc del dev {switch.name}-eth1 root')
-    #     switch.cmd(f'tc qdisc add dev {switch.name}-eth1 root netem loss {link_loss} delay 10ms')
-    #     switch.cmd(f'ethtool -K {switch.name}-eth1 gro off')
 
     net.start()
 
     net.waitConnected()
 
-    # Start server on h4
+    # Starting server on h4
     server_host = net.get('h4')
     server_host.cmd('iperf -s &')
+    #giving some time for the server to setup
     sleep(2)
 
-    # Start clients based on configuration
+    '''
+        Selecting the clients based
+        on configuration
+    '''
     if config == 'b':
         client_hosts = ['h1']
     elif config == 'c':
         client_hosts = ['h1', 'h2', 'h3']
     else:
-        info('Invalid configuration. Use --config=b or --config=c\n')
+        info('Invalid\n')
         net.stop()
         return
 
     num = 1
-    # Run iperf commands and capture the output
+    # Run iperf commands and capture the output in a pcap or text file
     iperf_output = ""
     for host in client_hosts:
+        #Get the client
         client = net.get(host)
-        iperf_cmd = f'iperf -c {server_host.IP()} -t 10 -i 1 -C {congestion_control}'
+
+        '''
+            For getting the output in a pcap file.
+            In case you want to see the output then
+            uncomment the next 3 lines and the 85th line.
+        '''
+        # pcap_file = f"{args.congestion}_capture_loss_{args.loss}.pcap"
+        # tcpdump_cmd = f'tcpdump -i {client.defaultIntf().name} -w {pcap_file} &'
+        # client.cmd(tcpdump_cmd)
+
+        #making the corresponding host a client
+        iperf_cmd = f'iperf -c {server_host.IP()} -t 5 -i 1 -Z {congestion_control}'
         iperf_output = client.cmd(iperf_cmd)
 
-        file_path = f"./file{num}.txt"
-        with open(file_path, 'w') as file:
-            file.write(iperf_output)
+        sleep(1)
+        # client.cmd('kill %tcpdump')
 
+        '''
+            For getting the output in a text file. In case
+            you want to see the output in a text file then
+            uncomment the next 3 lines only.
+        '''
+        # file_path = f"./file{num}.txt"
+        # with open(file_path, 'w') as file:
+        #     file.write(iperf_output)
+
+
+        '''
+            The infomation about the throughput that is stored
+            in the text or pcap file is also displayed in the terminal.
+        '''
         info(f'Iperf results:\n{iperf_output}\n') 
         num += 1
-
-    # Wait for iperf tests to complete
-    # print(iperf_output)
-    # Print the complete iperf output
 
     # CLI(net)
     net.stop()
